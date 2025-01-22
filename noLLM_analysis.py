@@ -1,5 +1,6 @@
 import tarfile
 import gzip
+import os
 import pandas as pd
 import numpy as np
 from io import StringIO
