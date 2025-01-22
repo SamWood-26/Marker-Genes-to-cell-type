@@ -4,18 +4,24 @@ import pandas as pd
 import numpy as np
 from io import StringIO
 
+# Dynamically determine the file path
+def get_file_path(filename):
+    # Assumes your data files are stored in the same directory as this script or a 'data' subfolder
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    return os.path.join(base_dir, 'data', filename)
+
+
 #file_path needs to be updated for your computer/directory set up
 def load_data():
+    file_path = get_file_path('cell_taxonomy_resource.txt.gz')
 
-    file_path = 'C:/Users/sam10/OneDrive/Desktop/Summer_2024/cell_taxonomy_resource.txt.gz'
-    
-    #Checks if the file is gzipped and read accordingly
+    # Check if the file is gzipped and read accordingly
     if file_path.endswith('.gz'):
         with gzip.open(file_path, 'rt') as f:
             df = pd.read_csv(f, delimiter='\t')
     else:
         df = pd.read_csv(file_path, delimiter='\t')
-    
+
     return df
 
 #Converts a comma or space string of genes into a list of gene names
