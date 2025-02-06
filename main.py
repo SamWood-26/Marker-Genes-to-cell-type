@@ -7,7 +7,7 @@ st.set_page_config(page_title="Home Page")
 st.sidebar.success("Select a Page Above")
 
 
-st.title("Welcome TODO")
+st.title("Welcome")
 st.write("""
 ## About This App
 This app aims to give a prediction on cell type based on user input.
