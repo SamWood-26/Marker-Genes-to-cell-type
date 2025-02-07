@@ -2,9 +2,6 @@ import streamlit as st
 import os
 import pandas as pd
 from noLLM_analysis import *
-#show more how it reaches the decision with stats and other stuff
-#be able to upload file to run multiple
-#have user upload API key
 st.title("No LLM")
 
 #Selecting type
@@ -25,9 +22,13 @@ def get_data():
     df = load_data()
     df_human = df[df['Species'] == 'Homo sapiens']
     df_mouse = df[df['Species'] == 'Mus musculus']
-    return df, df_human, df_mouse
 
-df, df_human, df_mouse = get_data()
+    total_cells = df['Cell_standard'].nunique()
+    human_cells = df_human['Cell_standard'].nunique()
+    mouse_cells = df_mouse['Cell_standard'].nunique()
+    return df, df_human, df_mouse, total_cells, human_cells, mouse_cells
+
+df, df_human, df_mouse, total_cells, human_cells, mouse_cells = get_data()
 
 #if loops that seperate inputs required base on different selections
 if fit_option != "Data Base":
@@ -38,17 +39,30 @@ if fit_option != "Data Base":
     )
 
     if species == 'Homo sapiens':
-        tissue_options = get_all_tissues(df_human, 'Homo sapiens')
+        df_selected = df_human
+        total_species_cells = human_cells
     else:
-        tissue_options = get_all_tissues(df_mouse, 'Mus musculus')
+        df_selected = df_mouse
+        total_species_cells = mouse_cells
+    
+    st.write(f"Total unique cell types before filtering: {total_cells}")
+    st.write(f"After selecting {species}: {total_species_cells} unique cell types remain.")
 
     #Tissue type selection via searchable box
+    tissue_options = get_all_tissues(df_selected, species)
     selected_tissues = st.multiselect(
         "Select Tissue Type(s)",
         options=tissue_options,
         default=["All"]
     )
     tissue_type = selected_tissues if selected_tissues else None  #Assigns selected tissues
+    # Filter dataset based on selected tissues
+    if "All" not in selected_tissues:
+        df_selected = df_selected[df_selected['Tissue_standard'].isin(selected_tissues)]
+    
+    # Count remaining unique cell types after filtering by tissue
+    remaining_cells = df_selected['Cell_standard'].nunique()
+    st.write(f"After selecting tissue type(s) {', '.join(selected_tissues)}: {remaining_cells} unique cell types remain.")
 
 
 else:
@@ -103,6 +117,7 @@ marker_genes_input = st.text_area(
 if st.button("Submit"):
     marker_genes = string_to_gene_array(marker_genes_input)
 
+
     if fit_option == "Data Base":
 
         if dataset == "Custom":
@@ -150,4 +165,5 @@ if st.button("Submit"):
 
         st.write(f"Results for {fit_option} with species {species}, tissue type {tissue_type}, and marker genes {marker_genes}:")
         st.write(result)
+
 
