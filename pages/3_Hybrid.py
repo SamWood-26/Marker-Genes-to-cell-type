@@ -6,20 +6,28 @@ from noLLM_analysis import *
 st.title("Hybrid")
 st.write("This is the Hybrid page.")
 
-# Secure API Key Input
-api_key = st.text_input(
-    "Enter your OpenAI API Key",
-    type="password",
-    placeholder="sk-..."
-)
+if "species" not in st.session_state:
+    st.session_state.species = None
+if "tissue" not in st.session_state:
+    st.session_state.tissue = ["All"]
+if "marker_genes" not in st.session_state:
+    st.session_state.marker_genes = ""
+if "api_key" not in st.session_state:
+    st.session_state.api_key = ""
+
+if st.session_state.api_key:
+    api_key = st.session_state.api_key
+else:
+    st.warning("Please enter an API key to use the chatbot.")
+    st.stop()  
 
 if api_key:
     openai.api_key = api_key
 
 # Preset variables
-tissue_type = None
-species = None
-custom_genes = None
+tissue_type = st.session_state.tissue
+species = st.session_state.species
+custom_genes = st.session_state.marker_genes
 
 # Load and subset data for species selection
 @st.cache_data
@@ -31,28 +39,16 @@ def get_data():
 
 df, df_human, df_mouse = get_data()
 
-# Define species selection options
-species = st.radio("Select Species", ("Homo sapiens", "Mus musculus"))
+
 df_selected = df_human if species == "Homo sapiens" else df_mouse
-tissue_options = get_all_tissues(df_selected, species)
 
-# Tissue type selection via multi-select
-selected_tissues = st.multiselect("Select Tissue Type(s)", options=tissue_options, default=["All"])
-tissue_type = selected_tissues if selected_tissues else None
-
-# Marker genes input area
-marker_genes_input = st.text_area(
-    "Enter Marker Genes",
-    placeholder="Enter marker genes, separated by commas. Ex: Gpx2, Rps12, Rpl12, Eef1a1, Rps19, Rpsa, Rps3, "
-                "Rps26, Rps24, Rps28, Reg4, Cldn2, Cd24a, Zfas1, Stmn1, Kcnq1, Rpl36a-ps1, Hopx, Cdca7, Smoc2"
-)
 
 # Button for initiating prediction
 if st.button("Submit"):
     if not api_key:
         st.error("Please enter your OpenAI API Key to proceed.")
     else:
-        marker_genes = string_to_gene_array(marker_genes_input)
+        marker_genes = custom_genes
 
         # Step 1: Predict top cell types based on selected fit option
         result_list = infer_top_cell_standards_weighted(df_selected, tissue_type, marker_genes)
