@@ -5,7 +5,7 @@ from noLLM_analysis import *
 #show more how it reaches the decision with stats and other stuff
 #be able to upload file to run multiple
 #have user upload API key
-st.title("similarity algorithm")
+st.title("Similarity Algorithm")
 
 
 if "species" not in st.session_state:
