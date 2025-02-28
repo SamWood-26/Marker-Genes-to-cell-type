@@ -74,11 +74,11 @@ else:
         ("Mouse Liver", "Human Breast Cancer", "Custom")
     )
     if dataset == "Mouse Liver":
-        file_path = 'feature.clean.MouseLiver1Slice1.tsv'
+        file_path =  get_file_path('feature.clean.MouseLiver1Slice1.tsv')
         species = 'Mouse'
         tissue_type = ['Liver']
     elif dataset == "Human Breast Cancer":
-        file_path = 'Xenium_FFPE_Human_Breast_Cancer_Rep1_panel.tsv'
+        file_path =  get_file_path('Xenium_FFPE_Human_Breast_Cancer_Rep1_panel.tsv')
         species = 'Human'
         tissue_type = ['Breast']
 
