@@ -97,11 +97,11 @@ def load_gene_markers(file_path):
 
 #Function to predict cell type based on marker genes and dataset
 def predict_cell_type(species, tissue_type, marker_genes):
-    # Dynamically determine file path based on species
-    if species.lower() == 'mouse':
-        file_path = get_file_path('feature.clean.MouseLiver1Slice1.tsv')
-    elif species.lower() == 'human':
-        file_path = get_file_path('Xenium_FFPE_Human_Breast_Cancer_Rep1_panel.tsv')
+    #Based on the pre set 2 data bases sets the species
+    if species.lower() == 'mus musculus':
+        file_path = 'feature.clean.MouseLiver1Slice1.tsv'
+    elif species.lower() == 'homo sapiens':
+        file_path = 'Xenium_FFPE_Human_Breast_Cancer_Rep1_panel.tsv'
     else:
         raise ValueError("Species must be 'Mouse' or 'Human'.")
 
@@ -109,7 +109,7 @@ def predict_cell_type(species, tissue_type, marker_genes):
         gene_markers = load_gene_markers(file_path)
         matched_genes = set(marker_genes) & set(gene_markers)
         
-        # Call infer_top_cell_standards function with matched genes
+        #Call infer_top_cell_standards function with matched genes
         df = load_data()
         result = infer_top_cell_standards(df, tissue_type, list(matched_genes))
         
@@ -159,6 +159,7 @@ def predict_cell_type_with_custom_genes(species, tissue_types, gene_markers, gen
     result = infer_top_cell_standards_weighted(df_filtered, tissue_types, genes_to_match)
     
     return result
+
 
 def compute_posterior_probabilities(marker_genes, cell_type_markers):
     cell_types = list(cell_type_markers.keys())
