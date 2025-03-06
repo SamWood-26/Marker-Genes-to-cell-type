@@ -5,7 +5,7 @@ from noLLM_analysis import *
 #show more how it reaches the decision with stats and other stuff
 #be able to upload file to run multiple
 #have user upload API key
-st.title("Similarity Algorithm")
+st.title("No LLM")
 
 
 if "species" not in st.session_state:
@@ -84,11 +84,11 @@ else:
         ("Mouse Liver", "Human Breast Cancer", "Custom")
     )
     if fit_option == "Mouse Liver":
-        file_path = get_file_path('feature.clean.MouseLiver1Slice1.tsv')
+        file_path = 'feature.clean.MouseLiver1Slice1.tsv'
         #species = 'Mouse'
         #tissue_type = ['Liver']
     elif fit_option == "Human Breast Cancer":
-        file_path = get_file_path('Xenium_FFPE_Human_Breast_Cancer_Rep1_panel.tsv')
+        file_path = 'Xenium_FFPE_Human_Breast_Cancer_Rep1_panel.tsv'
         #species = 'Human'
         #tissue_type = ['Breast']
 
@@ -126,13 +126,13 @@ if st.button("Submit"):
         if tissue_type == "All":
             tissue_type = None
 
+
         cell_type_markers = (
             df_selected.groupby("Cell_standard")["Cell_Marker"]
             .apply(lambda x: set(x.str.split(",").sum()))  # Convert to set of genes
             .to_dict()
         )
 
-        # Run both Inverse Weighting and Exact Match
         exact_match_result = infer_top_cell_standards(df_selected, tissue_type, marker_genes)
         exact_match_result = pd.DataFrame(exact_match_result)
 
