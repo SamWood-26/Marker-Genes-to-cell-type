@@ -159,3 +159,35 @@ def predict_cell_type_with_custom_genes(species, tissue_types, gene_markers, gen
     result = infer_top_cell_standards_weighted(df_filtered, tissue_types, genes_to_match)
     
     return result
+
+def compute_posterior_probabilities(marker_genes, cell_type_markers):
+    cell_types = list(cell_type_markers.keys())
+    num_cell_types = len(cell_types)
+
+    #Uniform prior P(cell type) = 1 / N
+    if num_cell_types == 0:
+        return
+    prior = 1 / num_cell_types  
+    likelihoods = {}
+
+    #Compute likelihood P(genes | cell type) for each cell type
+    for cell_type, known_genes in cell_type_markers.items():
+        matched_genes = marker_genes.intersection(known_genes)
+        likelihood = len(matched_genes) / len(known_genes) if len(known_genes) > 0 else 0
+        likelihoods[cell_type] = likelihood
+
+    #Compute unnormalized posterior: P(cell type | genes) ∝ P(genes | cell type) * P(cell type)
+    posteriors = {cell: likelihoods[cell] * prior for cell in cell_types}
+
+    #Normalize so probabilities sum to 1
+    total_prob = sum(posteriors.values())
+    if total_prob > 0:
+        posteriors = {cell: prob / total_prob for cell, prob in posteriors.items()}
+    else:
+        posteriors = {cell: 1 / num_cell_types for cell in cell_types}  # Default uniform if no matches
+
+    #Convert to DataFrame for easier display
+    df = pd.DataFrame(posteriors.items(), columns=["Cell Type", "Probability"])
+    df = df.sort_values(by="Probability", ascending=False)
+
+    return df
