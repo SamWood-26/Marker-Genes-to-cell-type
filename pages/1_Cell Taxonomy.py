@@ -126,9 +126,34 @@ if st.button("Submit"):
         if tissue_type == "All":
             tissue_type = None
 
+        cell_type_markers = (
+            df_selected.groupby("Cell_standard")["Cell_Marker"]
+            .apply(lambda x: set(x.str.split(",").sum()))  # Convert to set of genes
+            .to_dict()
+        )
+
         # Run both Inverse Weighting and Exact Match
-        inverse_weighting_result = infer_top_cell_standards_weighted(df_selected, tissue_type, marker_genes)
         exact_match_result = infer_top_cell_standards(df_selected, tissue_type, marker_genes)
+        exact_match_result = pd.DataFrame(exact_match_result)
+
+        # Getting cell types
+        inverse_cell_types = infer_top_cell_standards_weighted(df_selected, tissue_type, marker_genes)
+        exact_cell_types = infer_top_cell_standards(df_selected, tissue_type, marker_genes)
+
+        # Combine cell types from both methods
+        relevant_cells = set(inverse_cell_types).union(set(exact_cell_types))
+        cell_type_markers_filtered = {cell: cell_type_markers[cell] for cell in relevant_cells if cell in cell_type_markers}
+
+        # Compute posterior probabilities
+        posterior_probs_df = compute_posterior_probabilities(set(marker_genes), cell_type_markers_filtered)
+
+        exact_match_result.rename(columns={exact_match_result.columns[0]: 'Cell Type'}, inplace=True)
+
+        exact_match_result = exact_match_result.merge(posterior_probs_df, on="Cell Type", how="outer")
+
+        # Handle NaN values if necessary (fill with a default value, such as 0)
+        exact_match_result.fillna({"Probability": 0}, inplace=True)
+        exact_match_result.reset_index(drop=True, inplace=True)
 
         # Display both results
         st.write(f"### Results for {species} with Tissue Type: {tissue_type} and Marker Genes: {marker_genes}")
@@ -137,11 +162,13 @@ if st.button("Submit"):
 
         with col1:
             st.subheader("Inverse Weighting")
-            st.write(inverse_weighting_result)
+            st.write(inverse_cell_types)
 
         with col2:
             st.subheader("Exact Match")
-            st.write(exact_match_result)
+            st.write(exact_cell_types)
+            exact_match_result_sorted = exact_match_result.sort_values(by='Probability', ascending=False)
+            st.write(exact_match_result[['Cell Type', 'Probability']])
     else:
         if dataset == "Custom":
             custom_genes_array = string_to_gene_array(st.session_state.custom_data)
