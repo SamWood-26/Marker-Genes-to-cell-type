@@ -11,8 +11,12 @@ if "tissue" not in st.session_state:
     st.session_state.tissue = None
 if "marker_genes" not in st.session_state:
     st.session_state.marker_genes = ""
-if "api_key" not in st.session_state:
-    st.session_state.api_key = ""
+if "openai_api_key" not in st.session_state:
+    st.session_state.openai_api_key = ""
+if "google_api_key" not in st.session_state:
+    st.session_state.google_api_key = ""
+if "selected_api" not in st.session_state:
+    st.session_state.selected_api = "OpenAI"
 if "background_context" not in st.session_state:
     st.session_state.background_context = ""
 if "Gene_denominator" not in st.session_state:
@@ -21,11 +25,9 @@ if "custom_data" not in st.session_state:
    st.session_state.custom_data = ""
     
 
-
 st.set_page_config(page_title="Home Page")
 
 st.sidebar.success("Select a Page Above")
-
 
 st.title("Welcome")
 st.write("""
@@ -73,8 +75,8 @@ This website employs a straightforward yet flexible approach to cell type predic
    - This approach reduces the dominance of highly represented entries in the dataset (e.g., commonly studied cell types or tissues) and boosts the significance of rarer matches.  
    - The goal is to ensure that results are not solely influenced by the popularity or frequency of entries in the database, enabling a more balanced and exploratory analysis.
 
-3. **Google AI Matching**:  
-   - When provided with a list of potential cell type options, our platform leverages **Google AI** to infer the most likely match.  
+3. **AI Matching**:  
+   - When provided with a list of potential cell type options, our platform leverages **AI models** to infer the most likely match.  
    - Using the entered marker genes and contextual tissue information, the AI analyzes the input to predict the cell type that best aligns with the given data.  
    - This method is especially useful when users have predefined options and need additional computational insights to refine their predictions.
 """)
@@ -93,7 +95,6 @@ def get_data():
 
 #data frames loaded in
 df, df_human, df_mouse, total_cells, human_cells, mouse_cells = get_data()
-
 
 st.session_state.background_context = st.selectbox(
    "Select Dataset",
@@ -119,7 +120,6 @@ if st.session_state.background_context == "Upload TSV File":
 # Text area appears only if 'Custom Input' is selected
 elif st.session_state.background_context == "Custom Input":
    st.session_state.custom_data = st.text_area("Enter custom gene dataset:")
-
 
 #selecting Species as global variable
 species = st.radio(
@@ -152,11 +152,55 @@ marker_genes_input = st.text_area(
 )
 marker_genes = string_to_gene_array(marker_genes_input)
 st.session_state.marker_genes = marker_genes
-st.write("**To access pages 4 and 5, Hybrid and LLM OpenAI you will ned to enter an OpenAI API key**")
-st.session_state.api_key = st.text_input("Enter your OpenAI API key", type="password", placeholder="sk-...")
+
+# API Selection Section
+st.write("## AI Model Configuration")
+st.write("**Select your preferred AI provider and enter the corresponding API key**")
+
+# API Provider Selection
+st.session_state.selected_api = st.radio(
+    "Choose AI Provider:",
+    ["OpenAI", "Google AI"],
+    help="Select which AI service you want to use for pages 2, 3, and 4"
+)
+
+# API Key Input based on selection
+if st.session_state.selected_api == "OpenAI":
+    st.session_state.openai_api_key = st.text_input(
+        "Enter your OpenAI API key", 
+        type="password", 
+        placeholder="sk-...",
+        help="Get your API key from https://platform.openai.com/api-keys"
+    )
+    if st.session_state.openai_api_key:
+        st.success("OpenAI API key configured")
+        
+elif st.session_state.selected_api == "Google AI":
+    st.session_state.google_api_key = st.text_input(
+        "Enter your Google AI API key", 
+        type="password", 
+        placeholder="AIza...",
+        help="Get your API key from https://makersuite.google.com/app/apikey"
+    )
+    if st.session_state.google_api_key:
+        st.success("Google AI API key configured")
+
+# Show which pages will be affected
+if st.session_state.selected_api == "OpenAI" and st.session_state.openai_api_key:
+    st.info("Pages 2, 3, and 4 will use OpenAI GPT models")
+elif st.session_state.selected_api == "Google AI" and st.session_state.google_api_key:
+    st.info("Pages 2, 3, and 4 will use Google Gemini models")
+else:
+    st.warning("Please configure an API key to use AI-powered features on pages 2, 3, and 4")
 
 if st.button("Save Selection"):
+   api_status = "Configured" if (
+       (st.session_state.selected_api == "OpenAI" and st.session_state.openai_api_key) or
+       (st.session_state.selected_api == "Google AI" and st.session_state.google_api_key)
+   ) else "Not configured"
+   
    st.success(f"Selected option: {st.session_state.background_context}, {st.session_state.species}, {st.session_state.tissue}, {st.session_state.marker_genes}")
+   st.success(f"AI Provider: {st.session_state.selected_api} {api_status}")
+   
    if (st.session_state.background_context == "Upload TSV File") and (st.session_state.Gene_denominator.size > 0):
       st.success("File uploaded successfully!")
-       
