@@ -55,7 +55,7 @@ if marker_genes is not None and marker_genes != "":
     # Here, we add the selectbox for the weighting method
     weighting_method = st.selectbox(
         "Select Weighting Method",
-        ["Inverse Weighting", "Exact Match"]
+        ["Inverse Weighting", "Unweighted"]
     )
 
     # Add slider for weight decay if weighted method is selected
