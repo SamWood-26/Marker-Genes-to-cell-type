@@ -55,12 +55,12 @@ if marker_genes is not None and marker_genes != "":
     # Here, we add the selectbox for the weighting method
     weighting_method = st.selectbox(
         "Select Weighting Method",
-        ["Inverse Weighting", "Unweighted"]
+        ["Weighted", "Unweighted"]
     )
 
     # Add slider for weight decay if weighted method is selected
     weight_decay = 0.9  # default value
-    if weighting_method == "Inverse Weighting":
+    if weighting_method == "Weighted":
         st.markdown(
             "#### Weight Decay Factor\n"
             "Pick a value between 0 and 1. Lower values down-weight later genes more strongly. "
@@ -88,7 +88,7 @@ if marker_genes is not None and marker_genes != "":
                 st.write(f"Loading data from: {data_path}")
                 user_marker_genes = marker_genes if isinstance(marker_genes, list) else [str(marker_genes)]
                 # Run analysis based on selected method
-                if weighting_method == "Inverse Weighting":
+                if weighting_method == "Weighted":
                     probs, missing_genes = compute_weighted_probabilities_from_model_url(
                         data_path, user_marker_genes, weight_decay=weight_decay, return_missing=True
                     )
