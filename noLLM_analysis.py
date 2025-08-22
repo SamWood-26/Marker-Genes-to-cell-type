@@ -5,18 +5,15 @@ import pandas as pd
 import numpy as np
 from io import StringIO
 
-#file_path needs to be updated for your computer/directory set up
-def load_data():
 
-    file_path = 'C:/Users/sam10/OneDrive/Desktop/Summer_2024/cell_taxonomy_resource.txt.gz'
-    
-    #Checks if the file is gzipped and read accordingly
-    if file_path.endswith('.gz'):
-        with gzip.open(file_path, 'rt') as f:
-            df = pd.read_csv(f, delimiter='\t')
+def load_data():
+    file_path = os.path.join("data", "cell_taxonomy_resource.txt.gz")
+    # Checks if the file is gzipped and read accordingly
+    if file_path.endswith(".gz"):
+        with gzip.open(file_path, "rt") as f:
+            df = pd.read_csv(f, delimiter="\t")
     else:
-        df = pd.read_csv(file_path, delimiter='\t')
-    
+        df = pd.read_csv(file_path, delimiter="\t")
     return df
 
 #Converts a comma or space string of genes into a list of gene names
@@ -246,3 +243,4 @@ def recommend_model_for_genes(species, gene_list, celltypist_sources_human=None,
         return ("celltypist", best_source, best_count)
     else:
         return ("celltaxonomy", None, taxonomy_count)
+
