@@ -1,31 +1,25 @@
 import tarfile
 import gzip
-import os
 import streamlit as st
 import pandas as pd
 import numpy as np
 from io import StringIO
 
-# Dynamically determine the file path
-def get_file_path(filename):
-    # Assumes your data files are stored in the same directory as this script or a 'data' subfolder
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    return os.path.join(base_dir, 'data', filename)
-
-
 #file_path needs to be updated for your computer/directory set up
 def load_data():
-    file_path = get_file_path('cell_taxonomy_resource.txt.gz')
 
-    # Check if the file is gzipped and read accordingly
+    file_path = 'C:/Users/sam10/OneDrive/Desktop/Summer_2024/cell_taxonomy_resource.txt.gz'
+    
+    #Checks if the file is gzipped and read accordingly
     if file_path.endswith('.gz'):
         with gzip.open(file_path, 'rt') as f:
             df = pd.read_csv(f, delimiter='\t')
     else:
         df = pd.read_csv(file_path, delimiter='\t')
-
+    
     return df
 
+#Converts a comma or space string of genes into a list of gene names
 #Converts a comma or space string of genes into a list of gene names
 def string_to_gene_array(gene_string):
     return [gene.strip() for gene in gene_string.replace(',', ' ').split()]
@@ -193,3 +187,62 @@ def compute_posterior_probabilities(marker_genes, cell_type_markers):
     df = df.sort_values(by="Probability", ascending=False)
 
     return df
+
+
+def classify_species_from_genes(gene_list):
+    if not gene_list:
+        return "Unknown"
+    # Only consider genes that are alphabetic and at least 2 characters
+    filtered = [g for g in gene_list if g.isalpha() and len(g) > 1]
+    if not filtered:
+        return "Unknown"
+    if all(g.isupper() for g in filtered):
+        return "Homo sapiens"
+    if all(g[0].isupper() and g[1:].islower() for g in filtered):
+        return "Mus musculus"
+    return "Unknown/ambiguous"
+
+def recommend_model_for_genes(species, gene_list, celltypist_sources_human=None, celltypist_sources_mouse=None, cell_taxonomy_df=None):
+    """
+    Decide whether to use CellTypist or Cell Taxonomy based on gene coverage.
+    Returns: ("celltypist", best_source, best_count) or ("celltaxonomy", None, taxonomy_count)
+    """
+    # Prepare CellTypist sources
+    if species == "Homo sapiens":
+        sources = celltypist_sources_human or {}
+    elif species == "Mus musculus":
+        sources = celltypist_sources_mouse or {}
+    else:
+        return ("unknown", None, 0)
+
+    # Check CellTypist coverage
+    best_source = None
+    best_count = 0
+    for name, url in sources.items():
+        try:
+            # Only load the first column (gene names) for speed
+            import pickle
+            import requests
+            import io
+            # Download and load the model file
+            response = requests.get(url)
+            model = pickle.load(io.BytesIO(response.content))
+            model_genes = set(model["feature_names"])
+            count = len(set(gene_list) & model_genes)
+            if count > best_count:
+                best_count = count
+                best_source = name
+        except Exception:
+            continue
+
+    # Check Cell Taxonomy coverage
+    taxonomy_count = 0
+    if cell_taxonomy_df is not None:
+        taxonomy_genes = set(cell_taxonomy_df['Cell_Marker'].unique())
+        taxonomy_count = len(set(gene_list) & taxonomy_genes)
+
+    # Decide
+    if best_count > taxonomy_count:
+        return ("celltypist", best_source, best_count)
+    else:
+        return ("celltaxonomy", None, taxonomy_count)
