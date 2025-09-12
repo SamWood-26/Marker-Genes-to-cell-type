@@ -244,7 +244,7 @@ with tab2:
 
         # --- Run prediction and display results ---
         if model_type == "celltypist" and best_source:
-            st.info(f"Running CellTypist model: {best_source}")
+            st.info(f"Running CellTypist model: {best_source} (Exact Match)")
             try:
                 import pickle
                 import requests
@@ -255,12 +255,13 @@ with tab2:
                 model_genes = set(model["feature_names"])
                 input_genes = set(genes) & model_genes
                 cell_type_markers = model["cell_types"]
+                # Exact match: overlap count for each cell type (no weighting)
                 scores = {}
                 for cell_type, marker_set in cell_type_markers.items():
                     overlap = len(input_genes & set(marker_set))
                     scores[cell_type] = overlap
                 top5 = sorted(scores.items(), key=lambda x: -x[1])[:5]
-                st.subheader("Top 5 Predicted Cell Types (CellTypist)")
+                st.subheader("Top 5 Predicted Cell Types (CellTypist, Exact Match)")
                 st.table(pd.DataFrame(top5, columns=["Cell Type", "Score"]))
             except Exception as e:
                 st.error(f"Error running CellTypist model: {e}")
@@ -269,16 +270,42 @@ with tab2:
             st.info("Running Cell Taxonomy prediction")
             try:
                 tissue_type = ["All"]
-                top5 = infer_top_cell_standards_weighted(
-                    cell_taxonomy_df[cell_taxonomy_df['Species'] == species_guess],
+                df_filtered = cell_taxonomy_df[cell_taxonomy_df['Species'] == species_guess]
+                top5_cells = infer_top_cell_standards(
+                    df_filtered,
                     tissue_type, genes, top_n=5
                 )
+                # Robust marker extraction and overlap calculation
+                # --- FIX: Lowercase all marker genes for comparison ---
+                input_genes_set = set(g.lower() for g in genes)
+                cell_type_markers = (
+                    df_filtered.groupby("Cell_standard")["Cell_Marker"]
+                    .apply(lambda x: set(gene.strip().lower() for gene in ",".join(x).split(",") if gene.strip()))
+                    .to_dict()
+                )
+                overlap_data = []
+                query_gene_count = len(input_genes_set)
+                for cell in top5_cells:
+                    markers = cell_type_markers.get(cell, set())
+                    total_markers = len(markers)
+                    if total_markers == 0:
+                        st.warning(f"Cell type '{cell}' has no marker genes in the database.")
+                        overlap_count = 0
+                        overlap_pct = 0
+                    else:
+                        overlap_count = len(input_genes_set & markers)
+                        overlap_pct = (overlap_count / total_markers * 100)
+                    overlap_data.append({
+                        "Cell Type": cell,
+                        "Query Genes": query_gene_count,
+                        "CellType Markers": total_markers,
+                        "Overlap Count": overlap_count,
+                        "Overlap %": f"{overlap_pct:.1f}%"
+                    })
                 st.subheader("Top 5 Predicted Cell Types (Cell Taxonomy)")
-                st.table(pd.DataFrame(top5, columns=["Cell Type"]))
+                st.table(pd.DataFrame(overlap_data))
             except Exception as e:
                 st.error(f"Error running Cell Taxonomy prediction: {e}")
-        else:
-            st.warning("No model selected or insufficient data for prediction.")
 
     # --- Switch Mode Button ---
     # Only show if a prediction has been made
@@ -288,19 +315,43 @@ with tab2:
             genes = st.session_state.simple_marker_genes
             species_guess = classify_species_from_genes(genes)
             cell_taxonomy_df = get_cell_taxonomy_df()
-            # Switch mode
             if st.session_state.simple_mode == "celltypist":
-                # Run Cell Taxonomy
                 st.session_state.simple_mode = "celltaxonomy"
                 st.info("Running Cell Taxonomy prediction (switched mode)")
                 try:
                     tissue_type = ["All"]
-                    top5 = infer_top_cell_standards_weighted(
-                        cell_taxonomy_df[cell_taxonomy_df['Species'] == species_guess],
+                    df_filtered = cell_taxonomy_df[cell_taxonomy_df['Species'] == species_guess]
+                    top5_cells = infer_top_cell_standards(
+                        df_filtered,
                         tissue_type, genes, top_n=5
                     )
+                    input_genes_set = set(g.lower() for g in genes)
+                    cell_type_markers = (
+                        df_filtered.groupby("Cell_standard")["Cell_Marker"]
+                        .apply(lambda x: set(gene.strip().lower() for gene in ",".join(x).split(",") if gene.strip()))
+                        .to_dict()
+                    )
+                    overlap_data = []
+                    query_gene_count = len(input_genes_set)
+                    for cell in top5_cells:
+                        markers = cell_type_markers.get(cell, set())
+                        total_markers = len(markers)
+                        if total_markers == 0:
+                            st.warning(f"Cell type '{cell}' has no marker genes in the database.")
+                            overlap_count = 0
+                            overlap_pct = 0
+                        else:
+                            overlap_count = len(input_genes_set & markers)
+                            overlap_pct = (overlap_count / total_markers * 100)
+                        overlap_data.append({
+                            "Cell Type": cell,
+                            "Query Genes": query_gene_count,
+                            "CellType Markers": total_markers,
+                            "Overlap Count": overlap_count,
+                            "Overlap %": f"{overlap_pct:.1f}%"
+                        })
                     st.subheader("Top 5 Predicted Cell Types (Cell Taxonomy)")
-                    st.table(pd.DataFrame(top5, columns=["Cell Type"]))
+                    st.table(pd.DataFrame(overlap_data))
                 except Exception as e:
                     st.error(f"Error running Cell Taxonomy prediction: {e}")
             else:
