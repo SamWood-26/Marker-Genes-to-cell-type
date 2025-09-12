@@ -181,6 +181,11 @@ with tab2:
     st.header("Simple interface")
     st.write("Paste your marker gene list below. This interface is for quick predictions with minimal options.")
 
+    @st.cache_data
+    def get_cell_taxonomy_df():
+        return load_data()
+    cell_taxonomy_df = get_cell_taxonomy_df()
+
     # Use a form so the user enters genes and clicks a single "Run" button
     with st.form("simple_gene_form"):
         simple_input = st.text_area(
@@ -190,6 +195,10 @@ with tab2:
         )
         run_clicked = st.form_submit_button("Run")
 
+    # Store last mode in session state for switching
+    if "simple_mode" not in st.session_state:
+        st.session_state.simple_mode = None
+
     if run_clicked and simple_input:
         genes = [g.strip() for g in simple_input.replace('\n', ',').split(',') if g.strip()]
         st.session_state.simple_marker_genes = genes
@@ -197,7 +206,6 @@ with tab2:
         st.write("Genes:", genes[:10], "..." if len(genes) > 10 else "")
         st.write(f"Total genes entered: {len(genes)}")
 
-        # Define CellTypist sources
         celltypist_sources_human = {
             "Adult_COVID19_PBMC": "https://celltypist.cog.sanger.ac.uk/models/COVID19_PBMC_Wilk/v1/Adult_COVID19_PBMC.pkl",
             "Adult_Human_PrefrontalCortex": "https://celltypist.cog.sanger.ac.uk/models/Human_PFC_Ma/v1/Adult_Human_PrefrontalCortex.pkl",
@@ -209,12 +217,6 @@ with tab2:
             "Mouse_Whole_Brain":"https://celltypist.cog.sanger.ac.uk/models/Adult_MouseBrain_Yao/v1/Mouse_Whole_Brain.pkl"
         }
 
-        @st.cache_data
-        def get_cell_taxonomy_df():
-            return load_data()
-        cell_taxonomy_df = get_cell_taxonomy_df()
-
-        # --- Species Classification ---
         species_guess = classify_species_from_genes(genes)
         st.info(f"**Species:** {species_guess}")
 
@@ -227,8 +229,10 @@ with tab2:
                     genes,
                     celltypist_sources_human=celltypist_sources_human,
                     celltypist_sources_mouse=celltypist_sources_mouse,
-                    cell_taxonomy_df=cell_taxonomy_df
+                    cell_taxonomy_df=cell_taxonomy_df,
+                    celltypist_threshold=0.7
                 )
+            st.session_state.simple_mode = model_type  # Save mode for switching
             if model_type == "celltypist":
                 st.success(f"**Recommended: CellTypist** (best match: {best_source}, {best_count} genes found)")
             elif model_type == "celltaxonomy":
@@ -275,6 +279,76 @@ with tab2:
                 st.error(f"Error running Cell Taxonomy prediction: {e}")
         else:
             st.warning("No model selected or insufficient data for prediction.")
+
+    # --- Switch Mode Button ---
+    # Only show if a prediction has been made
+    if st.session_state.simple_mode in ["celltypist", "celltaxonomy"] and st.session_state.simple_marker_genes:
+        switch_label = "Switch to Cell Taxonomy and Run" if st.session_state.simple_mode == "celltypist" else "Switch to CellTypist and Run"
+        if st.button(switch_label):
+            genes = st.session_state.simple_marker_genes
+            species_guess = classify_species_from_genes(genes)
+            cell_taxonomy_df = get_cell_taxonomy_df()
+            # Switch mode
+            if st.session_state.simple_mode == "celltypist":
+                # Run Cell Taxonomy
+                st.session_state.simple_mode = "celltaxonomy"
+                st.info("Running Cell Taxonomy prediction (switched mode)")
+                try:
+                    tissue_type = ["All"]
+                    top5 = infer_top_cell_standards_weighted(
+                        cell_taxonomy_df[cell_taxonomy_df['Species'] == species_guess],
+                        tissue_type, genes, top_n=5
+                    )
+                    st.subheader("Top 5 Predicted Cell Types (Cell Taxonomy)")
+                    st.table(pd.DataFrame(top5, columns=["Cell Type"]))
+                except Exception as e:
+                    st.error(f"Error running Cell Taxonomy prediction: {e}")
+            else:
+                # Run CellTypist
+                st.session_state.simple_mode = "celltypist"
+                # Find best CellTypist source again
+                celltypist_sources_human = {
+                    "Adult_COVID19_PBMC": "https://celltypist.cog.sanger.ac.uk/models/COVID19_PBMC_Wilk/v1/Adult_COVID19_PBMC.pkl",
+                    "Adult_Human_PrefrontalCortex": "https://celltypist.cog.sanger.ac.uk/models/Human_PFC_Ma/v1/Adult_Human_PrefrontalCortex.pkl",
+                    "Cells_Adult_Breast": "https://celltypist.cog.sanger.ac.uk/models/Adult_Breast_Kumar/v1/Cells_Adult_Breast.pkl",
+                    "Healthy_Adult_Heart":"https://celltypist.cog.sanger.ac.uk/models/Human_Heart_Kanemaru/v1/Healthy_Adult_Heart.pkl"
+                }
+                celltypist_sources_mouse = {
+                    "Developing_Mouse_Brain":"https://celltypist.cog.sanger.ac.uk/models/Mouse_Devbrain_Manno/v1/Developing_Mouse_Brain.pkl",
+                    "Mouse_Whole_Brain":"https://celltypist.cog.sanger.ac.uk/models/Adult_MouseBrain_Yao/v1/Mouse_Whole_Brain.pkl"
+                }
+                model_type, best_source, best_count = recommend_model_for_genes(
+                    species_guess,
+                    genes,
+                    celltypist_sources_human=celltypist_sources_human,
+                    celltypist_sources_mouse=celltypist_sources_mouse,
+                    cell_taxonomy_df=cell_taxonomy_df,
+                    celltypist_threshold=0.0 # force CellTypist
+                )
+                if best_source:
+                    st.info(f"Running CellTypist model: {best_source} (switched mode)")
+                    try:
+                        import pickle
+                        import requests
+                        import io
+                        url = celltypist_sources_human[best_source] if species_guess == "Homo sapiens" else celltypist_sources_mouse[best_source]
+                        response = requests.get(url)
+                        model = pickle.load(io.BytesIO(response.content))
+                        model_genes = set(model["feature_names"])
+                        input_genes = set(genes) & model_genes
+                        cell_type_markers = model["cell_types"]
+                        scores = {}
+                        for cell_type, marker_set in cell_type_markers.items():
+                            overlap = len(input_genes & set(marker_set))
+                            scores[cell_type] = overlap
+                        top5 = sorted(scores.items(), key=lambda x: -x[1])[:5]
+                        st.subheader("Top 5 Predicted Cell Types (CellTypist)")
+                        st.table(pd.DataFrame(top5, columns=["Cell Type", "Score"]))
+                    except Exception as e:
+                        st.error(f"Error running CellTypist model: {e}")
+                else:
+                    st.warning("No CellTypist model available for these genes/species.")
+
     else:
         st.session_state.simple_marker_genes = []
         st.info("Enter marker genes to begin.")
