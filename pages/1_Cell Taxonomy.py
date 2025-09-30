@@ -5,6 +5,11 @@ from noLLM_analysis import *
 #show more how it reaches the decision with stats and other stuff
 #be able to upload file to run multiple
 #have user upload API key
+
+if "show_sidebar_pages" not in st.session_state or not st.session_state.show_sidebar_pages:
+    st.warning("This page is locked. Go to In-Depth Interface and click 'Save Selection' to enable navigation.")
+    st.stop()
+
 st.title("No LLM")
 
 
