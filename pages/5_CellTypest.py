@@ -3,6 +3,10 @@ import pandas as pd
 from celltypist_utils import *
 
 
+if "show_sidebar_pages" not in st.session_state or not st.session_state.show_sidebar_pages:
+    st.warning("This page is locked. Go to In-Depth Interface and click 'Save Selection' to enable navigation.")
+    st.stop()
+
 st.title("Bayesian Approach Using CellTypest Interaction Page")
 
 if "species" not in st.session_state:
