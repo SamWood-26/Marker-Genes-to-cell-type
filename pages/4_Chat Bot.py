@@ -2,6 +2,11 @@ import streamlit as st
 from openai import OpenAI
 import google.generativeai as genai
 
+
+if "show_sidebar_pages" not in st.session_state or not st.session_state.show_sidebar_pages:
+    st.warning("This page is locked. Go to In-Depth Interface and click 'Save Selection' to enable navigation.")
+    st.stop()
+
 st.title("Large Language Model (LLM) Interaction Page")
 
 # Check session state variables
