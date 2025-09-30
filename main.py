@@ -25,6 +25,10 @@ if "custom_data" not in st.session_state:
     st.session_state.custom_data = ""
 if "simple_marker_genes" not in st.session_state:
     st.session_state.simple_marker_genes = ""
+if "show_sidebar_pages" not in st.session_state:
+    # Controls whether the app's sidebar widgets/content are shown.
+    # Default False until user clicks "Save Selection" in the In-Depth Interface.
+    st.session_state.show_sidebar_pages = False
 
 st.set_page_config(page_title="Cell Type App Landing Page")
 
@@ -43,13 +47,18 @@ This app predicts cell types based on user-provided marker genes using curated s
 ---
 """)
 
-# --- Tabbed Interface ---
-tab1, tab2 = st.tabs(["Classical interface", "Simple interface"])
+# --- Tabbed Interface (Simple tab first) ---
+tab_simple, tab_classical = st.tabs(["Simple interface", "In-Depth Interface"])
 
-with tab1:
-    st.header("Classical interface")
+with tab_classical:
+    st.header("In-Depth Interface")
     st.write("This is the full-featured interface for advanced users. All options and settings are available here.")
-    st.sidebar.success("Select a Page Above")
+    # Show sidebar content only after Save Selection is pressed.
+    if st.session_state.show_sidebar_pages:
+        st.sidebar.success("Select a Page Above")
+    else:
+        # Minimal sidebar hint while sidebar content is hidden
+        st.sidebar.info("Configure options here and click 'Save Selection' to enable navigation.")
 
     #loading data
     @st.cache_data
@@ -169,15 +178,16 @@ with tab1:
            (st.session_state.selected_api == "Google AI" and st.session_state.google_api_key)
        ) else "Not configured"
        
+       # Reveal the app's sidebar widgets/content after saving selection
+       st.session_state.show_sidebar_pages = True
+       
        st.success(f"Selected option: {st.session_state.background_context}, {st.session_state.species}, {st.session_state.tissue}, {st.session_state.marker_genes}")
        st.success(f"AI Provider: {st.session_state.selected_api} {api_status}")
        
        if (st.session_state.background_context == "Upload TSV File") and (st.session_state.Gene_denominator.size > 0):
           st.success("File uploaded successfully!")
 
-
-
-with tab2:
+with tab_simple:
     st.header("Simple interface")
     st.write("Paste your marker gene list below. This interface is for quick predictions with minimal options.")
 
@@ -206,6 +216,7 @@ with tab2:
         st.write("Genes:", genes[:10], "..." if len(genes) > 10 else "")
         st.write(f"Total genes entered: {len(genes)}")
 
+        # Define CellTypist sources
         celltypist_sources_human = {
             "Adult_COVID19_PBMC": "https://celltypist.cog.sanger.ac.uk/models/COVID19_PBMC_Wilk/v1/Adult_COVID19_PBMC.pkl",
             "Adult_Human_PrefrontalCortex": "https://celltypist.cog.sanger.ac.uk/models/Human_PFC_Ma/v1/Adult_Human_PrefrontalCortex.pkl",
@@ -403,3 +414,6 @@ with tab2:
     else:
         st.session_state.simple_marker_genes = []
         st.info("Enter marker genes to begin.")
+
+
+
