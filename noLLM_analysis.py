@@ -205,9 +205,10 @@ def classify_species_from_genes(gene_list):
         return "Mus musculus"
     return "Unknown/ambiguous"
 
-def recommend_model_for_genes(species, gene_list, celltypist_sources_human=None, celltypist_sources_mouse=None, cell_taxonomy_df=None):
+def recommend_model_for_genes(species, gene_list, celltypist_sources_human=None, celltypist_sources_mouse=None, cell_taxonomy_df=None, celltypist_threshold=0.7):
     """
     Decide whether to use CellTypist or Cell Taxonomy based on gene coverage.
+    Prefers CellTypist if its coverage is at least `celltypist_threshold` times Cell Taxonomy coverage.
     Returns: ("celltypist", best_source, best_count) or ("celltaxonomy", None, taxonomy_count)
     """
     # Prepare CellTypist sources
@@ -223,11 +224,9 @@ def recommend_model_for_genes(species, gene_list, celltypist_sources_human=None,
     best_count = 0
     for name, url in sources.items():
         try:
-            # Only load the first column (gene names) for speed
             import pickle
             import requests
             import io
-            # Download and load the model file
             response = requests.get(url)
             model = pickle.load(io.BytesIO(response.content))
             model_genes = set(model["feature_names"])
@@ -244,10 +243,11 @@ def recommend_model_for_genes(species, gene_list, celltypist_sources_human=None,
         taxonomy_genes = set(cell_taxonomy_df['Cell_Marker'].unique())
         taxonomy_count = len(set(gene_list) & taxonomy_genes)
 
-    # Decide
-    if best_count > taxonomy_count:
+    # Prefer CellTypist if coverage is at least threshold * taxonomy_count
+    if best_count >= celltypist_threshold * taxonomy_count and best_count > 0:
         return ("celltypist", best_source, best_count)
     else:
         return ("celltaxonomy", None, taxonomy_count)
+
 
 
