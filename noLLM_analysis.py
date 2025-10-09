@@ -195,14 +195,19 @@ def compute_posterior_probabilities(marker_genes, cell_type_markers):
 def classify_species_from_genes(gene_list):
     if not gene_list:
         return "Unknown"
-    # Only consider genes that are alphabetic and at least 2 characters
-    filtered = [g for g in gene_list if g.isalpha() and len(g) > 1]
+    
+    # Clean up genes: remove commas, whitespace, and check alphanumeric
+    filtered = [g.strip().replace(",", "") for g in gene_list if g.strip().replace(",", "").isalnum() and len(g.strip()) > 1]
+    
     if not filtered:
         return "Unknown"
+
+    # Check naming conventions for species
     if all(g.isupper() for g in filtered):
         return "Homo sapiens"
     if all(g[0].isupper() and g[1:].islower() for g in filtered):
         return "Mus musculus"
+    
     return "Unknown/ambiguous"
 
 def recommend_model_for_genes(species, gene_list, celltypist_sources_human=None, celltypist_sources_mouse=None, cell_taxonomy_df=None, celltypist_threshold=0.7):
@@ -248,6 +253,7 @@ def recommend_model_for_genes(species, gene_list, celltypist_sources_human=None,
         return ("celltypist", best_source, best_count)
     else:
         return ("celltaxonomy", None, taxonomy_count)
+
 
 
 
