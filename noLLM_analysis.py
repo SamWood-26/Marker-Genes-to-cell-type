@@ -5,7 +5,8 @@ import pandas as pd
 import numpy as np
 from io import StringIO
 import os
-
+import requests
+from typing import List, Dict, Tuple, Optional
 
 def get_file_path(filename):
     # Assumes your data files are stored in the same directory as this script or a 'data' subfolder
@@ -253,6 +254,119 @@ def recommend_model_for_genes(species, gene_list, celltypist_sources_human=None,
         return ("celltypist", best_source, best_count)
     else:
         return ("celltaxonomy", None, taxonomy_count)
+
+
+def run_enrichr_enrichment(
+    marker_genes: List[str],
+    cell_libraries: Optional[List[str]] = None,
+    description: str = "Enrichr query from app",
+    timeout: int = 20
+) -> Tuple[Dict[str, pd.DataFrame], Dict[Optional[str], str]]:
+    """
+    Submit a list of marker genes to Enrichr and fetch enrichment tables for cell-type libraries.
+    Returns (results, errors) where:
+      - results: dict mapping library name -> pandas.DataFrame of results (may be empty DataFrame)
+      - errors: dict mapping library name or None (submission) -> error message
+    """
+    results: Dict[str, pd.DataFrame] = {}
+    errors: Dict[Optional[str], str] = {}
+
+    if not marker_genes:
+        errors[None] = "No marker genes provided."
+        return results, errors
+
+    if cell_libraries is None:
+        cell_libraries = [
+            "Descartes_Cell_Types_and_Tissues",
+            "PanglaoDB_Augmented_2021",
+            "Tabula_Sapiens",
+            "Tabula_Muris",
+            "MAGNET_Cell_Types",
+            "Human_Gene_Atlas",
+            "Mouse_Gene_Atlas"
+        ]
+
+    # sanitize input genes
+    cleaned = []
+    for g in marker_genes:
+        if not g:
+            continue
+        g2 = str(g).strip()
+        g2 = g2.replace('"', "").replace("'", "")
+        if g2:
+            cleaned.append(g2)
+    if not cleaned:
+        errors[None] = "No valid marker genes after sanitization."
+        return results, errors
+
+    genes_text = "\n".join(cleaned)
+
+    # helper to submit to Enrichr
+    def submit_to_enrichr(genes_text: str) -> Tuple[Optional[str], Optional[str]]:
+        addlist_url = "https://maayanlab.cloud/Enrichr/addList"
+
+        # Try multipart/form-data submission first (Enrichr expects multipart)
+        try:
+            r = requests.post(addlist_url, files={"list": (None, genes_text), "description": (None, description)}, timeout=timeout)
+            r.raise_for_status()
+            j = r.json()
+            if "userListId" in j:
+                return str(j["userListId"]), None
+            return None, f"Unexpected submission response (multipart): {j}"
+        except requests.HTTPError as he:
+            # capture response text if available for debugging
+            try:
+                return None, f"HTTP {r.status_code}: {r.text}"
+            except Exception:
+                return None, str(he)
+        except Exception:
+            # Fallback: try form-data (application/x-www-form-urlencoded) as last resort
+            try:
+                r2 = requests.post(addlist_url, data={"list": genes_text, "description": description}, timeout=timeout)
+                r2.raise_for_status()
+                j2 = r2.json()
+                if "userListId" in j2:
+                    return str(j2["userListId"]), None
+                return None, f"Unexpected submission response (form): {j2}"
+            except requests.HTTPError as he2:
+                try:
+                    return None, f"HTTP {r2.status_code}: {r2.text}"
+                except Exception:
+                    return None, str(he2)
+            except Exception as e2:
+                return None, str(e2)
+
+    user_list_id, submit_err = submit_to_enrichr(genes_text)
+    if not user_list_id:
+        errors[None] = submit_err or "Unknown submission error"
+        return results, errors
+
+    enrich_url = "https://maayanlab.cloud/Enrichr/enrich"
+    for lib in cell_libraries:
+        try:
+            r = requests.get(enrich_url, params={"userListId": user_list_id, "backgroundType": lib}, timeout=timeout)
+            r.raise_for_status()
+            payload = r.json()
+            lib_results = payload.get(lib, []) or payload.get(lib.lower(), []) or []
+            if not lib_results:
+                results[lib] = pd.DataFrame()
+                continue
+
+            df_lib = pd.DataFrame(lib_results)
+            # Defensive column normalization: standard Enrichr has at least 6 core columns
+            if df_lib.shape[1] >= 6:
+                df_lib = df_lib.iloc[:, :6]
+                df_lib.columns = ["Rank", "Term", "P-value", "Z-score", "Combined Score", "Overlapping Genes"]
+            else:
+                df_lib.columns = [f"col_{i}" for i in range(df_lib.shape[1])]
+
+            results[lib] = df_lib
+        except Exception as e:
+            errors[lib] = str(e)
+            results[lib] = pd.DataFrame()
+
+    return results, errors
+
 
 
 
