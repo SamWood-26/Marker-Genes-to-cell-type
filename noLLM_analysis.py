@@ -277,13 +277,12 @@ def run_enrichr_enrichment(
 
     if cell_libraries is None:
         cell_libraries = [
-            "Descartes_Cell_Types_and_Tissues_2021",
             "PanglaoDB_Augmented_2021",
             "Tabula_Sapiens",
             "Tabula_Muris",
-            "MAGNET_Cell_Types_2023",
             "Human_Gene_Atlas",
-            "Mouse_Gene_Atlas"
+            "Mouse_Gene_Atlas",
+            "Azimuth_2023"
         ]
 
     # sanitize input genes
@@ -366,6 +365,7 @@ def run_enrichr_enrichment(
             results[lib] = pd.DataFrame()
 
     return results, errors
+
 
 
 
