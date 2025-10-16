@@ -3,6 +3,7 @@ import streamlit as st
 import os
 import pandas as pd
 from noLLM_analysis import *
+# from GSEA_function import run_enrichr_enrichment
 
 # --- Session State Initialization ---
 if "species" not in st.session_state:
@@ -273,7 +274,7 @@ with tab_simple:
                     scores[cell_type] = overlap
                 top5 = sorted(scores.items(), key=lambda x: -x[1])[:5]
                 st.subheader("Top 5 Predicted Cell Types (CellTypist, Exact Match)")
-                st.table(pd.DataFrame(top5, columns=["Cell Type", "Score"]))
+                st.dataframe(pd.DataFrame(top5, columns=["Cell Type", "Score"]), height=220, use_container_width=True)
             except Exception as e:
                 st.error(f"Error running CellTypist model: {e}")
 
@@ -314,9 +315,49 @@ with tab_simple:
                         "Overlap %": f"{overlap_pct:.1f}%"
                     })
                 st.subheader("Top 5 Predicted Cell Types (Cell Taxonomy)")
-                st.table(pd.DataFrame(overlap_data))
+                st.dataframe(pd.DataFrame(overlap_data), height=220, use_container_width=True)
             except Exception as e:
                 st.error(f"Error running Cell Taxonomy prediction: {e}")
+        else:
+            st.warning("No model selected or insufficient data for prediction.")
+
+        # --- Run GSEA (Enrichr) for the same gene list (always) ---
+        with st.spinner("Running Enrichr enrichment..."):
+            try:
+                gsea_results, gsea_errors = run_enrichr_enrichment(genes)
+            except Exception as e:
+                gsea_results, gsea_errors = {}, {None: str(e)}
+
+        # show submission / fetch errors
+        if gsea_errors:
+            for k, msg in gsea_errors.items():
+                if k is None:
+                    st.error(f"Enrichr submission error: {msg}")
+                else:
+                    st.warning(f"Enrichr error for {k}: {msg}")
+
+        # display tables two-per-row and compact
+        if gsea_results:
+            st.subheader("Enrichr: Cell-Type Enrichment Results")
+            items = list(gsea_results.items())
+            for i in range(0, len(items), 2):
+                cols = st.columns(2)
+                for j in (0, 1):
+                    idx = i + j
+                    if idx >= len(items):
+                        break
+                    lib, df_lib = items[idx]
+                    with cols[j]:
+                        st.write(f"### {lib}")
+                        if df_lib is None or df_lib.empty:
+                            st.info("No enrichment results.")
+                        else:
+                            st.dataframe(df_lib, height=220, use_container_width=True)
+                            csv_bytes = df_lib.to_csv(index=False).encode("utf-8")
+                            fname = f"enrichr_{lib.replace(' ', '_')}.csv"
+                            st.download_button(f"Download {lib} CSV", data=csv_bytes, file_name=fname, mime="text/csv")
+        else:
+            st.info("No Enrichr results to display.")
 
     # --- Switch Mode Button ---
     # Only show if a prediction has been made
@@ -362,7 +403,7 @@ with tab_simple:
                             "Overlap %": f"{overlap_pct:.1f}%"
                         })
                     st.subheader("Top 5 Predicted Cell Types (Cell Taxonomy)")
-                    st.table(pd.DataFrame(overlap_data))
+                    st.dataframe(pd.DataFrame(overlap_data), height=220, use_container_width=True)
                 except Exception as e:
                     st.error(f"Error running Cell Taxonomy prediction: {e}")
             else:
@@ -405,7 +446,7 @@ with tab_simple:
                             scores[cell_type] = overlap
                         top5 = sorted(scores.items(), key=lambda x: -x[1])[:5]
                         st.subheader("Top 5 Predicted Cell Types (CellTypist)")
-                        st.table(pd.DataFrame(top5, columns=["Cell Type", "Score"]))
+                        st.dataframe(pd.DataFrame(top5, columns=["Cell Type", "Score"]), height=220, use_container_width=True)
                     except Exception as e:
                         st.error(f"Error running CellTypist model: {e}")
                 else:
