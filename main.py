@@ -176,8 +176,7 @@ with st.expander("Quick Tutorial"):
         st.markdown("###  Simple Interface")
         st.markdown(
             """
-            - Paste genes separated by commas or newlines  
-              e.g. `LYZ, S100A9, AIF1`
+            - Paste genes comma-separated, space/tab/EOL separated, if rank or weight is provided, we could accommodate [gene]:[score] format or JSON
             - Click **Run** to analyze using the best modules available  
               based on your gene list and species  
               (species is auto-detected(human or mouse))
