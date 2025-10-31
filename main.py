@@ -3,7 +3,102 @@ import streamlit as st
 import os
 import pandas as pd
 from noLLM_analysis import *
+import numpy as np
+import io, pickle, requests
+import json, re
+from collections import OrderedDict
 # from GSEA_function import run_enrichr_enrichment
+
+# Flexible parser for gene input
+_num_pat = re.compile(r"""^[+-]?((\d+(\.\d*)?)|(\.\d+))([eE][+-]?\d+)?$""")
+
+def _is_number(s: str) -> bool:
+    return bool(_num_pat.match(s.strip()))
+
+def parse_genes_flexible(text: str):
+    """
+    Parse marker genes from a flexible free-text field.
+
+    Accepts:
+      - Comma-, semicolon-, space-, tab-, newline-separated lists: e.g. "LYZ, S100A9  AIF1"
+      - Pairs with weights: "LYZ:0.91", "LYZ 0.91", "LYZ\t0.91"
+      - JSON list: ["LYZ","S100A9","AIF1"]
+      - JSON dict: {"LYZ": 0.91, "S100A9": 0.83}
+    Returns:
+      - genes: list[str] (unique, order-preserving)
+      - weights: dict[str, float] (only for entries with a score)
+    """
+    text = (text or "").strip()
+    genes_order = OrderedDict()
+    weights = {}
+
+    if not text:
+        return [], {}
+
+    # 1) Try JSON first
+    if text[0] in "[{":
+        try:
+            obj = json.loads(text)
+            if isinstance(obj, list):
+                for item in obj:
+                    if isinstance(item, str):
+                        g = item.strip().strip("'\"")
+                        if g:
+                            genes_order[g] = True
+                    elif isinstance(item, dict):
+                        gene = item.get("gene") or item.get("name")
+                        score = item.get("score") or item.get("weight")
+                        if isinstance(gene, str):
+                            g = gene.strip().strip("'\"")
+                            if g:
+                                genes_order[g] = True
+                                if isinstance(score, (int, float)) or (isinstance(score, str) and _is_number(score)):
+                                    weights[g] = float(score)
+            elif isinstance(obj, dict):
+                for k, v in obj.items():
+                    g = str(k).strip().strip("'\"")
+                    if g:
+                        genes_order[g] = True
+                        if isinstance(v, (int, float)) or (isinstance(v, str) and _is_number(v)):
+                            weights[g] = float(v)
+            return list(genes_order.keys()), weights
+        except Exception:
+            pass  # fall through to plain-text parsing
+
+    # 2) Plain text parsing
+    chunks = re.split(r"[,\n;]+", text)
+    for raw in chunks:
+        s = raw.strip()
+        if not s:
+            continue
+
+        # gene:score
+        if ":" in s:
+            left, right = s.split(":", 1)
+            g = left.strip().strip("'\"")
+            val = right.strip()
+            if g:
+                genes_order[g] = True
+                if _is_number(val):
+                    weights[g] = float(val)
+            continue
+
+        # whitespace-delimited
+        toks = re.split(r"\s+", s)
+        if len(toks) == 2 and _is_number(toks[1]):
+            g = toks[0].strip().strip("'\"")
+            if g:
+                genes_order[g] = True
+                weights[g] = float(toks[1])
+            continue
+
+        for t in toks:
+            g = t.strip().strip("'\"")
+            if g:
+                genes_order[g] = True
+
+    return list(genes_order.keys()), weights
+
 
 # --- Session State Initialization ---
 if "species" not in st.session_state:
@@ -34,20 +129,70 @@ if "show_sidebar_pages" not in st.session_state:
 st.set_page_config(page_title="Cell Type App Landing Page")
 
 # --- Landing Page Content ---
+# st.title("Cell Type Prediction Platform")
+# st.markdown("""
+# Welcome to the Cell Type Prediction Platform!
+
+# **About:**  
+# This app predicts cell types based on user-provided marker genes using curated single-cell datasets, established algorithms, a new algorithm built with CellTypist, and multi-platform AI integration.
+
+# **How to Use:**  
+# - Choose your preferred interface below.
+# - Follow the instructions in each tab to input your data and get predictions.
+
+# ---
+# """)
+# --- New landing Page content ---
 st.title("Cell Type Prediction Platform")
-st.markdown("""
-Welcome to the Cell Type Prediction Platform!
 
-**About:**  
-This app predicts cell types based on user-provided marker genes using curated single-cell datasets and AI-powered algorithms.
+# Top-row: brief description + Tutorial/Help
+colL, colR = st.columns([3, 1])
+with colL:
+    st.markdown(
+        "This app predicts cell types based on user-provided marker genes using curated "
+        "single-cell datasets, established algorithms, a new algorithm built with "
+        "CellTypist, and multi-platform AI integration. "
+        "Select your options, Simple or In-Depth interface, then enter your marker genes"
+        "and hit **Run**."
+    )
+with colR:
+    # If you add a 'pages/Help.py', this will deep-link to it; otherwise we show an expander.
+    try:
+        st.page_link("pages/Help.py", label="📘 Tutorial / Help", icon=":material/help:")
+    except Exception:
+        pass
 
-**How to Use:**  
-- Choose your preferred interface below.
-- Follow the instructions in each tab to input your data and get predictions.
+with st.expander("Quick Tutorial"):
+    col1, col2 = st.columns(2)
 
----
-""")
+    with col1:
+        st.markdown("###  Simple Interface")
+        st.markdown(
+            """
+            - Paste genes separated by commas or newlines  
+              e.g. `LYZ, S100A9, AIF1`
+            - Click **Run** to analyze using the best modules available  
+              based on your gene list and species  
+              (species is auto-detected(human or mouse))
+            """
+        )
 
+    with col2:
+        st.markdown("###  In-Depth Interface")
+        st.markdown(
+            """
+            - Supports advanced configurations and filters  
+              (species, tissue type, and gene subset)
+            - Choose background gene list to run on:  
+              **Cell Taxonomy**, **Mouse Liver**, **Human Breast Cancer**, **Upload TSV File**, or **Custom Input**
+            - Then select species(human or mouse)
+            - Select **tissue type(s)** defualts to "All"
+            - Next paste your **marker genes** separated by commas into the text area
+            - Then if you want to use AI models, select your preferred AI provider and enter your API key
+            - Click **Save Selection** to start analysis and  
+              view reslts on the 5 pages available
+            """
+        )
 # --- Tabbed Interface (Simple tab first) ---
 tab_simple, tab_classical = st.tabs(["Simple interface", "In-Depth Interface"])
 
@@ -211,9 +356,13 @@ with tab_simple:
         st.session_state.simple_mode = None
 
     if run_clicked and simple_input:
-        genes = [g.strip() for g in simple_input.replace('\n', ',').split(',') if g.strip()]
+        genes, weights = parse_genes_flexible(simple_input)
         st.session_state.simple_marker_genes = genes
+        weights = weights  # optional: store any provided weights
+
         st.success(f"Saved {len(genes)} marker genes for simple interface.")
+        if weights:
+            st.info(f"{len(weights)} genes include weights/scores.")
         st.write("Genes:", genes[:10], "..." if len(genes) > 10 else "")
         st.write(f"Total genes entered: {len(genes)}")
 
