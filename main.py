@@ -20,10 +20,12 @@ def parse_genes_flexible(text: str):
     Parse marker genes from a flexible free-text field.
 
     Accepts:
-      - Comma-, semicolon-, space-, tab-, newline-separated lists: e.g. "LYZ, S100A9  AIF1"
-      - Pairs with weights: "LYZ:0.91", "LYZ 0.91", "LYZ\t0.91"
+      - Comma/semicolon/newline/space/tab-separated lists: "LYZ, S100A9  AIF1"
+      - Space-separated gene:score pairs: "MNDA:12 SERPINA1:1.23 TYROBP:3"
+      - Whitespace gene score pairs: "LYZ 0.91"
       - JSON list: ["LYZ","S100A9","AIF1"]
       - JSON dict: {"LYZ": 0.91, "S100A9": 0.83}
+
     Returns:
       - genes: list[str] (unique, order-preserving)
       - weights: dict[str, float] (only for entries with a score)
@@ -65,37 +67,42 @@ def parse_genes_flexible(text: str):
         except Exception:
             pass  # fall through to plain-text parsing
 
-    # 2) Plain text parsing
-    chunks = re.split(r"[,\n;]+", text)
-    for raw in chunks:
-        s = raw.strip()
-        if not s:
-            continue
+    # 2) Plain text parsing (robust)
+    # Normalize common separators to spaces, then split on whitespace
+    norm = re.sub(r"[,\n;\t]+", " ", text)
+    toks = [t for t in norm.split() if t]
 
-        # gene:score
-        if ":" in s:
-            left, right = s.split(":", 1)
-            g = left.strip().strip("'\"")
-            val = right.strip()
+    i = 0
+    while i < len(toks):
+        tok = toks[i]
+
+        # Case A: token is "gene:score"
+        if ":" in tok:
+            g, val = tok.split(":", 1)
+            g = g.strip().strip("'\"")
+            val = val.strip().strip("'\"")
             if g:
                 genes_order[g] = True
                 if _is_number(val):
                     weights[g] = float(val)
+            i += 1
             continue
 
-        # whitespace-delimited
-        toks = re.split(r"\s+", s)
-        if len(toks) == 2 and _is_number(toks[1]):
-            g = toks[0].strip().strip("'\"")
+        # Case B: "gene score" pair across two tokens
+        if i + 1 < len(toks) and _is_number(toks[i + 1]):
+            g = tok.strip().strip("'\"")
+            val = toks[i + 1].strip().strip("'\"")
             if g:
                 genes_order[g] = True
-                weights[g] = float(toks[1])
+                weights[g] = float(val)
+            i += 2
             continue
 
-        for t in toks:
-            g = t.strip().strip("'\"")
-            if g:
-                genes_order[g] = True
+        # Case C: just a bare gene token
+        g = tok.strip().strip("'\"")
+        if g:
+            genes_order[g] = True
+        i += 1
 
     return list(genes_order.keys()), weights
 
