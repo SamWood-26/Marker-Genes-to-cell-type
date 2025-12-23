@@ -2,167 +2,24 @@
 import streamlit as st
 import os
 import pandas as pd
-from noLLM_analysis import *
+from noLLM_analysis_refactored import *
 import numpy as np
 import io, pickle, requests
 import json, re
 from collections import OrderedDict
+import numpy as np
 # from GSEA_function import run_enrichr_enrichment
 
-# Flexible parser for gene input
-_num_pat = re.compile(r"""^[+-]?((\d+(\.\d*)?)|(\.\d+))([eE][+-]?\d+)?$""")
 
-def _is_number(s: str) -> bool:
-    return bool(_num_pat.match(s.strip()))
-
-def parse_genes_flexible(text: str):
-    """
-    Parse marker genes from a flexible free-text field.
-
-    Accepts:
-      - Comma/semicolon/newline/space/tab-separated lists: "LYZ, S100A9  AIF1"
-      - Space-separated gene:score pairs: "MNDA:12 SERPINA1:1.23 TYROBP:3"
-      - Whitespace gene score pairs: "LYZ 0.91"
-      - JSON list: ["LYZ","S100A9","AIF1"]
-      - JSON dict: {"LYZ": 0.91, "S100A9": 0.83}
-
-    Returns:
-      - genes: list[str] (unique, order-preserving)
-      - weights: dict[str, float] (only for entries with a score)
-    """
-    text = (text or "").strip()
-    genes_order = OrderedDict()
-    weights = {}
-
-    if not text:
-        return [], {}
-
-    # 1) Try JSON first
-    if text[0] in "[{":
-        try:
-            obj = json.loads(text)
-            if isinstance(obj, list):
-                for item in obj:
-                    if isinstance(item, str):
-                        g = item.strip().strip("'\"")
-                        if g:
-                            genes_order[g] = True
-                    elif isinstance(item, dict):
-                        gene = item.get("gene") or item.get("name")
-                        score = item.get("score") or item.get("weight")
-                        if isinstance(gene, str):
-                            g = gene.strip().strip("'\"")
-                            if g:
-                                genes_order[g] = True
-                                if isinstance(score, (int, float)) or (isinstance(score, str) and _is_number(score)):
-                                    weights[g] = float(score)
-            elif isinstance(obj, dict):
-                for k, v in obj.items():
-                    g = str(k).strip().strip("'\"")
-                    if g:
-                        genes_order[g] = True
-                        if isinstance(v, (int, float)) or (isinstance(v, str) and _is_number(v)):
-                            weights[g] = float(v)
-            return list(genes_order.keys()), weights
-        except Exception:
-            pass  # fall through to plain-text parsing
-
-    # 2) Plain text parsing (robust)
-    # Normalize common separators to spaces, then split on whitespace
-    norm = re.sub(r"[,\n;\t]+", " ", text)
-    toks = [t for t in norm.split() if t]
-
-    i = 0
-    while i < len(toks):
-        tok = toks[i]
-
-        # Case A: token is "gene:score"
-        if ":" in tok:
-            g, val = tok.split(":", 1)
-            g = g.strip().strip("'\"")
-            val = val.strip().strip("'\"")
-            if g:
-                genes_order[g] = True
-                if _is_number(val):
-                    weights[g] = float(val)
-            i += 1
-            continue
-
-        # Case B: "gene score" pair across two tokens
-        if i + 1 < len(toks) and _is_number(toks[i + 1]):
-            g = tok.strip().strip("'\"")
-            val = toks[i + 1].strip().strip("'\"")
-            if g:
-                genes_order[g] = True
-                weights[g] = float(val)
-            i += 2
-            continue
-
-        # Case C: just a bare gene token
-        g = tok.strip().strip("'\"")
-        if g:
-            genes_order[g] = True
-        i += 1
-
-    return list(genes_order.keys()), weights
-
-
-# --- Session State Initialization ---
-if "species" not in st.session_state:
-    st.session_state.species = None
-if "tissue" not in st.session_state:
-    st.session_state.tissue = None
-if "marker_genes" not in st.session_state:
-    st.session_state.marker_genes = ""
-if "openai_api_key" not in st.session_state:
-    st.session_state.openai_api_key = ""
-if "google_api_key" not in st.session_state:
-    st.session_state.google_api_key = ""
-if "selected_api" not in st.session_state:
-    st.session_state.selected_api = "OpenAI"
-if "background_context" not in st.session_state:
-    st.session_state.background_context = ""
-if "Gene_denominator" not in st.session_state:
-    st.session_state.Gene_denominator = ""
-if "custom_data" not in st.session_state:
-    st.session_state.custom_data = ""
-if "simple_marker_genes" not in st.session_state:
-    st.session_state.simple_marker_genes = ""
-if "show_sidebar_pages" not in st.session_state:
-    # Controls whether the app's sidebar widgets/content are shown.
-    # Default False until user clicks "Save Selection" in the In-Depth Interface.
-    st.session_state.show_sidebar_pages = False
-
-# Additional session state for Simple Interface AI implementation
-if "simple_has_run" not in st.session_state:
-    st.session_state.simple_has_run = False
-if "simple_species_guess" not in st.session_state:
-    st.session_state.simple_species_guess = None
-if "simple_gsea_results_summary" not in st.session_state:
-    st.session_state.simple_gsea_results_summary = {}
-if "simple_celltaxonomy_top5" not in st.session_state:
-    st.session_state.simple_celltaxonomy_top5 = []
+init_session_state_defaults()
 
 st.set_page_config(page_title="Cell Type App Landing Page")
 
 # --- Landing Page Content ---
-# st.title("Cell Type Prediction Platform")
-# st.markdown("""
-# Welcome to the Cell Type Prediction Platform!
 
-# **About:**  
-# This app predicts cell types based on user-provided marker genes using curated single-cell datasets, established algorithms, a new algorithm built with CellTypist, and multi-platform AI integration.
-
-# **How to Use:**  
-# - Choose your preferred interface below.
-# - Follow the instructions in each tab to input your data and get predictions.
-
-# ---
-# """)
-# --- New landing Page content ---
 st.title("Cell Type Prediction Platform")
 
-# Top-row: brief description + Tutorial/Help
+# Top-row brief description + Tutorial/Help
 colL, colR = st.columns([3, 1])
 with colL:
     st.markdown(
@@ -173,7 +30,7 @@ with colL:
         "and hit **Run**."
     )
 with colR:
-    # If you add a 'pages/Help.py', this will deep-link to it; otherwise we show an expander.
+    # For later help page expansion
     try:
         st.page_link("pages/Help.py", label="📘 Tutorial / Help", icon=":material/help:")
     except Exception:
@@ -215,50 +72,36 @@ tab_simple, tab_classical = st.tabs(["Simple interface", "In-Depth Interface"])
 with tab_classical:
     st.header("In-Depth Interface")
     st.write("This is the full-featured interface for advanced users. All options and settings are available here.")
-    # Show sidebar content only after Save Selection is pressed.
     if st.session_state.show_sidebar_pages:
         st.sidebar.success("Select a Page Above")
     else:
-        # Minimal sidebar hint while sidebar content is hidden
         st.sidebar.info("Configure options here and click 'Save Selection' to enable navigation.")
 
     #loading data
-    @st.cache_data
-    def get_data():
-       df = load_data()
-       df_human = df[df['Species'] == 'Homo sapiens']
-       df_mouse = df[df['Species'] == 'Mus musculus']
-
-       total_cells = df['Cell_standard'].nunique()
-       human_cells = df_human['Cell_standard'].nunique()
-       mouse_cells = df_mouse['Cell_standard'].nunique()
-       return df, df_human, df_mouse, total_cells, human_cells, mouse_cells
-
-    #data frames loaded in
-    df, df_human, df_mouse, total_cells, human_cells, mouse_cells = get_data()
-
+    df, df_human, df_mouse, total_cells, human_cells, mouse_cells = get_data_cached()
     st.session_state.background_context = st.selectbox(
        "Select Dataset",
        ["Base","Mouse Liver", "Human Breast Cancer", "Upload TSV File", "Custom Input"]
     )
 
-    # File uploader appears only if 'Upload TSV File' is selected
+    # File uploader option
     if st.session_state.background_context == "Upload TSV File":
         uploaded_file = st.file_uploader("Upload your TSV file", type=["tsv"])
 
         if uploaded_file:
-            df_uploaded = pd.read_csv(uploaded_file, sep="\t")  # Read TSV file
-            if not df_uploaded.empty:
-                first_column_name = df_uploaded.columns[0]  # Get first column name
-                marker_genes_from_file = df_uploaded[first_column_name].dropna().astype(str).tolist()  # Extract and clean data
-                st.session_state.Gene_denominator = np.array(marker_genes_from_file)  # Store in session state
+            try:
+                df_uploaded = pd.read_csv(uploaded_file, sep="\t")
+                if df_uploaded.shape[1] == 0 or df_uploaded.empty:
+                    st.warning("The uploaded file looks empty or malformed.")
+                else:
+                    marker_genes_from_file = extract_marker_genes_from_uploaded_tsv(df_uploaded)
+                    st.session_state.Gene_denominator = np.array(marker_genes_from_file)
+                    st.success(f"Extracted {len(marker_genes_from_file)} marker genes from file.")
+                    st.write(marker_genes_from_file[:25], "..." if len(marker_genes_from_file) > 25 else "")
+            except Exception as e:
+                st.error(f"Could not read TSV: {e}")
 
-                st.success(f"Extracted {len(marker_genes_from_file)} marker genes from file.")
-                st.write("Extracted Marker Genes:", marker_genes_from_file)
-            else:
-                st.warning("The uploaded file is empty. Please check your file.")
-
-    # Text area appears only if 'Custom Input' is selected
+   
     elif st.session_state.background_context == "Custom Input":
        st.session_state.custom_data = st.text_area("Enter custom gene dataset:")
 
@@ -374,7 +217,7 @@ with tab_simple:
     if run_clicked and simple_input:
         genes, weights = parse_genes_flexible(simple_input)
         st.session_state.simple_marker_genes = genes
-        weights = weights  # optional: store any provided weights
+        weights = weights  # store any provided weights
 
         st.success(f"Saved {len(genes)} marker genes for simple interface.")
         if weights:
@@ -382,7 +225,6 @@ with tab_simple:
         st.write("Genes:", genes[:10], "..." if len(genes) > 10 else "")
         st.write(f"Total genes entered: {len(genes)}")
 
-        #NEW SHIT
         st.write(f"Total genes entered: {len(genes)}")
 
         species_guess = classify_species_from_genes(genes)
@@ -415,7 +257,7 @@ with tab_simple:
                     cell_taxonomy_df=cell_taxonomy_df,
                     celltypist_threshold=0.7
                 )
-            st.session_state.simple_mode = model_type  # Save mode for switching
+            st.session_state.simple_mode = model_type 
             if model_type == "celltypist":
                 st.success(f"**Recommended: CellTypist** (best match: {best_source}, {best_count} genes found)")
             elif model_type == "celltaxonomy":
@@ -438,7 +280,7 @@ with tab_simple:
                 model_genes = set(model["feature_names"])
                 input_genes = set(genes) & model_genes
                 cell_type_markers = model["cell_types"]
-                # Exact match: overlap count for each cell type (no weighting)
+                # Exact match
                 scores = {}
                 for cell_type, marker_set in cell_type_markers.items():
                     overlap = len(input_genes & set(marker_set))
@@ -461,8 +303,7 @@ with tab_simple:
 
                 st.session_state.simple_celltaxonomy_top5 = top5_cells
 
-                # Robust marker extraction and overlap calculation
-                # --- FIX: Lowercase all marker genes for comparison ---
+                # marker extraction and overlap calculation
                 input_genes_set = set(g.lower() for g in genes)
                 cell_type_markers = (
                     df_filtered.groupby("Cell_standard")["Cell_Marker"]
@@ -495,7 +336,7 @@ with tab_simple:
         else:
             st.warning("No model selected or insufficient data for prediction.")
 
-        # --- Run GSEA (Enrichr) for the same gene list (always) ---
+        # --- Run GSEA (Enrichr) for the same gene list---
         with st.spinner("Running Enrichr enrichment..."):
             try:
                 gsea_results, gsea_errors = run_enrichr_enrichment(genes)
@@ -515,7 +356,7 @@ with tab_simple:
             st.subheader("Enrichr: Cell-Type Enrichment Results")
             items = list(gsea_results.items())
 
-            # Build a compact summary of top terms for "Explain Results"
+            # Builds a Explain Results text
             gsea_summary = {}
             for lib, df_lib in items:
                 if df_lib is None or df_lib.empty:
@@ -532,7 +373,7 @@ with tab_simple:
                 gsea_summary[lib] = top_terms
             st.session_state.simple_gsea_results_summary = gsea_summary
 
-            # Same two-per-row display as before
+            # Two row display
             for i in range(0, len(items), 2):
                 cols = st.columns(2)
                 for j in (0, 1):
@@ -561,7 +402,7 @@ with tab_simple:
   # --- Switch Mode & Explain Results (Simple interface) ---
     if st.session_state.simple_marker_genes:
 
-        # Switch model button (same logic as before)
+        # Switch model button
         if st.session_state.simple_mode in ["celltypist", "celltaxonomy"]:
             switch_label = (
                 "Switch to Cell Taxonomy and Run"
@@ -640,7 +481,7 @@ with tab_simple:
                         celltypist_sources_human=celltypist_sources_human,
                         celltypist_sources_mouse=celltypist_sources_mouse,
                         cell_taxonomy_df=cell_taxonomy_df,
-                        celltypist_threshold=0.0  # force CellTypist
+                        celltypist_threshold=0.0  
                     )
                     if best_source:
                         st.info(f"Running CellTypist model: {best_source} (switched mode)")
@@ -670,7 +511,6 @@ with tab_simple:
                     else:
                         st.warning("No CellTypist model available for these genes/species.")
 
-        # Explain Results button (full-width, below switch)
         # Explain with AI (full-width, below switch)
         if st.session_state.simple_has_run:
             st.markdown("### Explain with AI")
@@ -684,7 +524,7 @@ with tab_simple:
                     horizontal=True,
                 )
 
-                # Default keys from In-Depth config if available
+                # Default keys from personal running
                 default_openai_key = st.session_state.get("openai_api_key", "")
                 default_gemini_key = st.session_state.get("google_api_key", "")
 
@@ -711,7 +551,7 @@ with tab_simple:
                 run_ai = st.form_submit_button("Explain with AI")
 
                 if run_ai:
-                    # Basic key checks
+                    # Key checks
                     if provider.startswith("OpenAI") and not openai_key:
                         st.error("Please enter your OpenAI API key.")
                     elif provider.startswith("Google") and not gemini_key:
@@ -795,7 +635,7 @@ with tab_simple:
                                 client = OpenAI(api_key=openai_key)
 
                                 completion = client.chat.completions.create(
-                                    model="gpt-5.1", #"gpt-4.1-mini" or "gpt-5.1"
+                                    model="gpt-5.1", #"gpt-4.1-mini" or "gpt-5.1" others for testing
                                     messages=[
                                         {
                                             "role": "system",
@@ -819,14 +659,12 @@ with tab_simple:
 
                             else:
                                 # Google Gemini
-                                # Requires: pip install google-generativeai
                                 import google.generativeai as genai
 
                                 genai.configure(api_key=gemini_key)
 
-                                # Try a newer model first; fall back to older gemini-pro if needed
                                 model_id_candidates = [
-                                    "models/gemini-3-pro-preview",      # Main
+                                    "models/gemini-3-pro-preview",      # Primary
                                     # "models/gemini-2.5-pro",            #Uncomment for testing perposes
                                     # "models/gemini-2.5-flash",          #Uncomment for testing perposes
                                 ]
