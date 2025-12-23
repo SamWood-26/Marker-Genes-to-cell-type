@@ -366,6 +366,156 @@ def run_enrichr_enrichment(
 
     return results, errors
 
+import json, re
+from collections import OrderedDict
+
+_num_pat = re.compile(r"""^[+-]?((\d+(\.\d*)?)|(\.\d+))([eE][+-]?\d+)?$""")
+
+def _is_number(s: str) -> bool:
+    return bool(_num_pat.match(str(s).strip()))
+
+def parse_genes_flexible(text: str):
+    """
+    Parse marker genes from a flexible free-text field.
+
+    Accepts:
+      - Comma/semicolon/newline/space/tab-separated lists: "LYZ, S100A9  AIF1"
+      - Space-separated gene:score pairs: "MNDA:12 SERPINA1:1.23 TYROBP:3"
+      - Whitespace gene score pairs: "LYZ 0.91"
+      - JSON list: ["LYZ","S100A9","AIF1"]
+      - JSON dict: {"LYZ": 0.91, "S100A9": 0.83}
+
+    Returns:
+      - genes: list[str] (unique, order-preserving)
+      - weights: dict[str, float] (only for entries with a score)
+    """
+    text = (text or "").strip()
+    genes_order = OrderedDict()
+    weights = {}
+    if not text:
+        return [], {}
+
+    # 1) Try JSON first
+    if text[0] in "[{":
+        try:
+            obj = json.loads(text)
+            if isinstance(obj, list):
+                for item in obj:
+                    if isinstance(item, str):
+                        g = item.strip().strip("'\"")
+                        if g:
+                            genes_order[g] = True
+                    elif isinstance(item, dict):
+                        gene = item.get("gene") or item.get("name")
+                        score = item.get("score") or item.get("weight")
+                        if isinstance(gene, str):
+                            g = gene.strip().strip("'\"")
+                            if g:
+                                genes_order[g] = True
+                                if isinstance(score, (int, float)) or (isinstance(score, str) and _is_number(score)):
+                                    weights[g] = float(score)
+            elif isinstance(obj, dict):
+                for k, v in obj.items():
+                    g = str(k).strip().strip("'\"")
+                    if g:
+                        genes_order[g] = True
+                        if isinstance(v, (int, float)) or (isinstance(v, str) and _is_number(v)):
+                            weights[g] = float(v)
+            return list(genes_order.keys()), weights
+        except Exception:
+            pass  # fall through
+
+    # Plain text parsing
+    norm = re.sub(r"[,\n;\t]+", " ", text)
+    toks = [t for t in norm.split() if t]
+
+    i = 0
+    while i < len(toks):
+        tok = toks[i]
+
+        # "gene:score"
+        if ":" in tok:
+            g, val = tok.split(":", 1)
+            g = g.strip().strip("'\"")
+            val = val.strip().strip("'\"")
+            if g:
+                genes_order[g] = True
+                if _is_number(val):
+                    weights[g] = float(val)
+            i += 1
+            continue
+
+        # "gene score"
+        if i + 1 < len(toks) and _is_number(toks[i + 1]):
+            g = tok.strip().strip("'\"")
+            val = toks[i + 1].strip().strip("'\"")
+            if g:
+                genes_order[g] = True
+                weights[g] = float(val)
+            i += 2
+            continue
+
+        # bare gene
+        g = tok.strip().strip("'\"")
+        if g:
+            genes_order[g] = True
+        i += 1
+
+    return list(genes_order.keys()), weights
+
+
+def init_session_state_defaults():
+    """Initialize Streamlit session_state keys used by the app (idempotent)."""
+    defaults = {
+        "species": None,
+        "tissue": None,
+        "marker_genes": "",
+        "openai_api_key": "",
+        "google_api_key": "",
+        "selected_api": "OpenAI",
+        "background_context": "",
+        "Gene_denominator": "",
+        "custom_data": "",
+        "simple_marker_genes": "",
+        "show_sidebar_pages": False,
+        "simple_has_run": False,
+        "simple_species_guess": None,
+        "simple_gsea_results_summary": {},
+        "simple_celltaxonomy_top5": [],
+        "simple_mode": None,
+    }
+    for k, v in defaults.items():
+        if k not in st.session_state:
+            st.session_state[k] = v
+
+
+@st.cache_data
+def get_data_cached():
+    """Load Cell Taxonomy data and pre-split by species; cached for Streamlit."""
+    df = load_data()
+    df_human = df[df["Species"] == "Homo sapiens"]
+    df_mouse = df[df["Species"] == "Mus musculus"]
+
+    total_cells = df["Cell_standard"].nunique()
+    human_cells = df_human["Cell_standard"].nunique()
+    mouse_cells = df_mouse["Cell_standard"].nunique()
+    return df, df_human, df_mouse, total_cells, human_cells, mouse_cells
+
+
+def extract_marker_genes_from_uploaded_tsv(df_uploaded: pd.DataFrame) -> List[str]:
+    """Extract unique, non-empty strings from the first column of an uploaded TSV dataframe."""
+    if df_uploaded is None or df_uploaded.empty or df_uploaded.shape[1] == 0:
+        return []
+    first_col = df_uploaded.columns[0]
+    return (
+        df_uploaded[first_col]
+        .dropna().astype(str)
+        .map(lambda s: s.strip())
+        .loc[lambda s: s.str.len() > 0]
+        .drop_duplicates()
+        .tolist()
+    )
+
 
 
 
