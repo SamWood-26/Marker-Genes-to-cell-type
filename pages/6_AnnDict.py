@@ -15,7 +15,7 @@ llm_model = "gpt-4o-mini" # gpt-4o-mini, gpt-5.2
 llm_api_key = ""
 
 if not (llm_provider and llm_model and llm_api_key):
-    st.warning("Please open config.py and set your llm_provider / llm_model / llm_api_key.")
+    st.warning("Please open 6_AnnDict.py in pages and set your llm_provider / llm_model / llm_api_key.")
     st.stop()
 llm_api_key
 
