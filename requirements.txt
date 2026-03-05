@@ -6,3 +6,5 @@ openai
 IPython
 scikit-learn
 requests
+anndict
+anthropic
